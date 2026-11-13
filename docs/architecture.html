@@ -1,0 +1,252 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drive Organizer Flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap">
+<style>
+/* Layout: a whiteboard hung on a wall, one hand-drawn system sketch, sticky notes stuck underneath for the details. Single deliberate light look. */
+:root{
+  --wall:#e4e8ec;
+  --board:#fdfdfc;
+  --frame:#b9bfc6;
+  --ink:#23262b;
+  --blue:#1f4fbf;
+  --green:#1b8a4c;
+  --red:#d2382c;
+  --purple:#6a3fb5;
+  --orange:#d9771f;
+  --sticky:#fff27a;
+  --sticky2:#ffd1e3;
+  --sticky3:#c8f1d4;
+  --hand:"Caveat", "Comic Sans MS", "Bradley Hand", cursive;
+  --note:"Kalam", "Comic Sans MS", "Bradley Hand", cursive;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--wall); color:var(--ink); font-family:var(--note); margin:0;
+  padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap{max-width:1180px; margin:0 auto; padding-block:32px 64px; display:flex; flex-direction:column; gap:28px}
+h1{font-family:var(--hand); font-weight:700; font-size:clamp(2.2rem,5vw,3.2rem); margin:0; line-height:1; color:var(--ink)}
+h1 span{color:var(--blue)}
+
+.board-shell{background:var(--frame); padding:12px; border-radius:8px; box-shadow:0 18px 40px -20px rgba(30,40,60,.45), inset 0 1px 0 rgba(255,255,255,.6)}
+.board{
+  background:
+    radial-gradient(ellipse 40% 25% at 20% 30%, rgba(120,140,170,.06), transparent 70%),
+    radial-gradient(ellipse 30% 20% at 80% 75%, rgba(120,140,170,.07), transparent 70%),
+    var(--board);
+  border-radius:3px; overflow-x:auto;
+}
+.board svg{display:block; width:100%; min-width:880px; height:auto}
+.tray{height:14px; margin:0 6% ; background:linear-gradient(#cfd4da,#a9b0b8); border-radius:0 0 8px 8px; position:relative}
+.tray i{position:absolute; top:-6px; height:9px; width:70px; border-radius:4px}
+.tray i:nth-child(1){left:12%; background:var(--blue)}
+.tray i:nth-child(2){left:22%; background:var(--red); width:62px}
+.tray i:nth-child(3){left:31%; background:var(--ink); width:66px}
+.tray i:nth-child(4){right:14%; background:#f4f4f4; width:56px; height:12px; top:-9px; border:1px solid #bbb}
+
+.notes{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:26px; padding:10px 6px 0}
+.note{background:var(--sticky); padding:18px 20px 22px; box-shadow:0 10px 18px -12px rgba(0,0,0,.45); font-size:1rem; line-height:1.45; transform:rotate(-1.2deg)}
+.note:nth-child(2){background:var(--sticky2); transform:rotate(1deg)}
+.note:nth-child(3){background:var(--sticky3); transform:rotate(-.6deg)}
+.note h2{font-family:var(--hand); font-size:1.75rem; margin:0 0 6px; line-height:1}
+.note ul{margin:0; padding-left:18px; display:flex; flex-direction:column; gap:4px}
+@media (prefers-reduced-motion:reduce){ .note{transform:none} }
+</style>
+
+<div class="wrap">
+  <h1>Drive Organizer <span>- one weekly run, start to finish</span></h1>
+
+  <div>
+    <div class="board-shell">
+      <div class="board">
+        <svg id="board" viewBox="0 0 1200 720" role="img" aria-label="Flow chart: on Friday the routine grabs the code from GitHub, lists what changed in Drive (the private folder is dropped), checks file names, Haiku reads and Sonnet decides, then it moves files, logs every move and emails the owner. Google Apps Script is the hands that does the work inside Drive."></svg>
+      </div>
+    </div>
+    <div class="tray"><i></i><i></i><i></i><i></i></div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h2>Heads up</h2>
+      <ul>
+        <li>Claude never touches Drive directly</li>
+        <li>Private folder is blocked twice</li>
+        <li>Every move can be undone</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>You decide</h2>
+      <ul>
+        <li>Correct it in /drive-review</li>
+        <li>It learns from your corrections</li>
+        <li>At most 5 questions a week</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>Stack</h2>
+      <ul>
+        <li>Claude Code routine, Haiku plus Sonnet</li>
+        <li>Google Apps Script</li>
+        <li>GitHub for the code</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+<script>
+(function(){
+  var NS = "http://www.w3.org/2000/svg";
+  var svg = document.getElementById("board");
+  var rc = window.rough ? rough.svg(svg) : null;
+  var C = {ink:"#23262b", blue:"#1f4fbf", green:"#1b8a4c", red:"#d2382c", purple:"#6a3fb5", orange:"#d9771f", grey:"#6b7178"};
+  var seed = 7;
+
+  function o(extra){
+    var base = {stroke:C.ink, strokeWidth:2.4, roughness:1.4, bowing:1.2, seed:seed++};
+    for (var k in extra) base[k] = extra[k];
+    return base;
+  }
+  function el(tag, attrs){ var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); svg.appendChild(e); return e; }
+  function put(g){ svg.appendChild(g); return g; }
+
+  // shapes (rough when available, plain SVG otherwise)
+  function rect(cx, cy, w, h, opt){
+    if (rc) return put(rc.rectangle(cx - w/2, cy - h/2, w, h, o(opt)));
+    return el("rect", {x:cx-w/2, y:cy-h/2, width:w, height:h, rx:10, fill:opt && opt.fill ? opt.fill : "none", "fill-opacity":.25, stroke:(opt&&opt.stroke)||C.ink, "stroke-width":2.4});
+  }
+  function ellipse(cx, cy, w, h, opt){
+    if (rc) return put(rc.ellipse(cx, cy, w, h, o(opt)));
+    return el("ellipse", {cx:cx, cy:cy, rx:w/2, ry:h/2, fill:opt && opt.fill ? opt.fill : "none", "fill-opacity":.25, stroke:(opt&&opt.stroke)||C.ink, "stroke-width":2.4});
+  }
+  function path(d, opt){
+    if (rc) return put(rc.path(d, o(opt)));
+    return el("path", {d:d, fill:"none", stroke:(opt&&opt.stroke)||C.ink, "stroke-width":(opt&&opt.strokeWidth)||2.4, "stroke-dasharray":opt&&opt.strokeLineDash ? opt.strokeLineDash.join(" ") : ""});
+  }
+  function line(x1,y1,x2,y2,opt){ return path("M"+x1+" "+y1+" L"+x2+" "+y2, opt); }
+
+  function text(x, y, s, opt){
+    opt = opt || {};
+    var t = el("text", {x:x, y:y, "text-anchor":opt.anchor||"middle", fill:opt.color||C.ink,
+      "font-family":opt.family||"Caveat, 'Comic Sans MS', cursive", "font-size":opt.size||22, "font-weight":opt.weight||500});
+    String(s).split("\n").forEach(function(l, i){
+      var ts = document.createElementNS(NS, "tspan"); ts.setAttribute("x", x); if (i) ts.setAttribute("dy", (opt.size||22)*1.05); ts.textContent = l; t.appendChild(ts);
+    });
+    if (opt.rotate) t.setAttribute("transform", "rotate("+opt.rotate+" "+x+" "+y+")");
+    return t;
+  }
+  function title(x, y, main, sub, color){
+    text(x, y, main, {size:32, weight:700, color:color||C.ink});
+    if (sub) text(x, y + 24, sub, {size:19, color:C.grey});
+  }
+
+  // arrow along a quadratic curve, with a hand-drawn head
+  function arrow(x1, y1, x2, y2, opt){
+    opt = opt || {};
+    var bend = opt.bend || 0;
+    var mx = (x1+x2)/2, my = (y1+y2)/2, dx = x2-x1, dy = y2-y1, len = Math.hypot(dx,dy) || 1;
+    var cx = mx - dy/len*bend, cy = my + dx/len*bend;
+    var col = opt.color || C.ink;
+    var po = {stroke:col, strokeWidth:opt.width||2.2, roughness:1.1};
+    if (opt.dashed) po.strokeLineDash = [9, 7];
+    path("M"+x1+" "+y1+" Q"+cx+" "+cy+" "+x2+" "+y2, po);
+    var ax = x2-cx, ay = y2-cy, al = Math.hypot(ax,ay) || 1; ax/=al; ay/=al;
+    var s = 15, sp = 0.45;
+    var hx1 = x2 - s*(ax*Math.cos(sp) - ay*Math.sin(sp)), hy1 = y2 - s*(ay*Math.cos(sp) + ax*Math.sin(sp));
+    var hx2 = x2 - s*(ax*Math.cos(-sp) - ay*Math.sin(-sp)), hy2 = y2 - s*(ay*Math.cos(-sp) + ax*Math.sin(-sp));
+    path("M"+hx1+" "+hy1+" L"+x2+" "+y2+" L"+hx2+" "+hy2, {stroke:col, strokeWidth:opt.width||2.2, roughness:.6});
+    if (opt.label){
+      var lx = opt.lx != null ? opt.lx : (x1+2*cx+x2)/4, ly = opt.ly != null ? opt.ly : (y1+2*cy+y2)/4;
+      text(lx, ly, opt.label, {size:23, color:col, weight:700, anchor:opt.anchor});
+    }
+  }
+  // red marker annotation with a little squiggle pointer
+  function note(x, y, s, px, py, anchor){
+    text(x, y, s, {size:22, color:C.red, weight:700, anchor:anchor||"middle"});
+    if (px != null) path("M"+(anchor==="start"?x-8:x)+" "+(y-24)+" Q"+((x+px)/2+10)+" "+((y+py)/2-14)+" "+px+" "+py, {stroke:C.red, strokeWidth:1.6, roughness:1.6});
+  }
+
+  function pill(cx, cy, w, h, opt){
+    var r = h/2, x = cx - w/2, y = cy - h/2;
+    var d = "M"+(x+r)+" "+y+" L"+(x+w-r)+" "+y+" A"+r+" "+r+" 0 0 1 "+(x+w-r)+" "+(y+h)+" L"+(x+r)+" "+(y+h)+" A"+r+" "+r+" 0 0 1 "+(x+r)+" "+y+" Z";
+    return path(d, opt);
+  }
+  function diamond(cx, cy, w, h, opt){
+    return path("M"+cx+" "+(cy-h/2)+" L"+(cx+w/2)+" "+cy+" L"+cx+" "+(cy+h/2)+" L"+(cx-w/2)+" "+cy+" Z", opt);
+  }
+  function step(cx, cy, n){
+    ellipse(cx, cy, 34, 34, {stroke:C.ink, strokeWidth:2, fill:"#ffffff", fillStyle:"solid", roughness:.8});
+    text(cx, cy + 8, String(n), {size:23, weight:700});
+  }
+
+  // ---------- trigger + code ----------
+  pill(130, 72, 190, 74, {stroke:C.red, strokeWidth:3, fill:"#ffd6d1", fillStyle:"hachure", hachureGap:9});
+  text(130, 68, "Friday", {size:30, weight:700, color:C.red});
+  text(130, 92, "18:40, every week", {size:17, color:C.grey});
+
+  rect(372, 72, 190, 80, {stroke:C.ink, strokeWidth:2.6, fill:"#e6e8eb", fillStyle:"hachure", hachureGap:10});
+  title(372, 70, "GitHub", "where my code lives");
+
+  // ---------- the five steps ----------
+  var Y = 262, W = 190, H = 100, xs = [130, 360, 590, 820, 1060];
+  ellipse(xs[0], Y, 214, 118, {stroke:C.blue, strokeWidth:3.5, fill:"#c9d8ff", fillStyle:"hachure", hachureGap:8});
+  ellipse(xs[0], Y, 228, 130, {stroke:C.blue, strokeWidth:1.3, roughness:2});
+  step(xs[0]-92, Y-50, 1);
+  title(xs[0], Y-2, "Wake up", "Claude Code routine", C.blue);
+
+  rect(xs[1], Y, W, H, {stroke:C.ink, strokeWidth:2.6});
+  step(xs[1]-W/2, Y-H/2, 2);
+  title(xs[1], Y-2, "List changes", "private folder dropped");
+
+  rect(xs[2], Y, W, H, {stroke:C.red, strokeWidth:2.6});
+  step(xs[2]-W/2, Y-H/2, 3);
+  title(xs[2], Y-2, "Check names", "secrets never opened", C.red);
+
+  ellipse(xs[3], Y, 236, 118, {stroke:C.purple, strokeWidth:3, fill:"#e2d6fb", fillStyle:"hachure", hachureGap:10});
+  [[xs[3]-78,Y-48,xs[3]-92,Y-62],[xs[3],Y-58,xs[3],Y-76],[xs[3]+78,Y-48,xs[3]+92,Y-62]].forEach(function(p){ line(p[0],p[1],p[2],p[3],{stroke:C.purple, strokeWidth:2}); });
+  step(xs[3]-104, Y-48, 4);
+  title(xs[3], Y-2, "Read + decide", "Haiku reads, Sonnet decides", C.purple);
+
+  rect(xs[4], Y, W, H, {stroke:C.green, strokeWidth:2.6});
+  step(xs[4]-W/2, Y-H/2, 5);
+  title(xs[4], Y-2, "Move + report", "logs every move", C.green);
+
+  arrow(130, 110, 130, 196, {width:3, label:"wakes", lx:142, ly:160, anchor:"start"});
+  arrow(372, 113, 200, 214, {label:"grabs code", lx:300, ly:178, anchor:"start"});
+  arrow(240, Y, 263, Y, {width:3});
+  arrow(457, Y, 493, Y, {width:3});
+  arrow(687, Y, 700, Y, {width:3});
+  arrow(940, Y, 963, Y, {width:3});
+
+  // ---------- the hands ----------
+  rect(590, 500, 560, 104, {stroke:C.green, strokeWidth:3.4, fill:"#bfe8cf", fillStyle:"hachure", hachureGap:10});
+  text(590, 496, "The hands", {size:40, weight:700, color:C.green});
+  text(590, 524, "Google Apps Script", {size:20, color:C.grey});
+
+  arrow(360, 314, 400, 446, {color:C.green, label:"look", lx:356, ly:396, anchor:"end"});
+  arrow(1030, 314, 840, 446, {color:C.green, label:"do it", lx:960, ly:396, anchor:"start"});
+
+  ellipse(470, 650, 230, 76, {stroke:C.ink, strokeWidth:2.6});
+  title(470, 650, "My Drive", "");
+  rect(760, 650, 210, 70, {stroke:C.red, strokeWidth:2.6, strokeLineDash:[8,6]});
+  title(752, 658, "Private folder", "");
+  line(848, 620, 860, 632, {stroke:C.red, strokeWidth:3}); line(860, 620, 848, 632, {stroke:C.red, strokeWidth:3});
+
+  arrow(470, 553, 470, 608, {label:"does the work", lx:484, ly:590, anchor:"start"});
+  arrow(720, 553, 740, 612, {color:C.red, dashed:true, label:"blocked", lx:752, ly:592, anchor:"start"});
+
+  // ---------- end ----------
+  pill(1060, 500, 190, 80, {stroke:C.red, strokeWidth:3, fill:"#ffd6d1", fillStyle:"hachure", hachureGap:9});
+  text(1060, 496, "Email to me", {size:28, weight:700, color:C.red});
+  text(1060, 520, "here's what I did", {size:17, color:C.grey});
+  arrow(1100, 314, 1100, 456, {width:3, label:"emails", lx:1112, ly:396, anchor:"start"});
+
+  // ---------- annotations ----------
+  note(745, 372, "small cheap model reads,\nsmart one decides");
+  note(140, 520, "Claude never\ntouches my Drive", null, null);
+})();
+</script>

@@ -1,0 +1,14 @@
+# Tunables only. Security settings live in tools/guard.py (hand-edited by the owner).
+dry_run: true              # start with dry runs; set to false yourself after reading the reports
+decider_model: sonnet
+summarizer_model: haiku
+max_files_per_run: 150
+max_actions_per_run: 100
+max_chars_per_file: 20000
+summarizer_batch_size: 10
+ask_threshold: 0.7
+max_questions_per_run: 5    # everything else undoable is decided by the agent
+stale_days: 120
+report_email: "you@example.com"   # the ONLY address reports go to (must match REPORT_EMAIL in Apps Script)
+timezone: UTC
+categories: [Clients, Business Operations, Content, Learning, Personal, Finance, Archive]
