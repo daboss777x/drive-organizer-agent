@@ -20,17 +20,28 @@ def _agent_owned(f):
     return p == AGENT_FOLDER or p.startswith(AGENT_FOLDER + "/")
 
 
+def folder_map(files):
+    """{folder path: file count} for the classifier to design a structure from. Paths only."""
+    out = {}
+    for f in files:
+        if not _agent_owned(f):
+            out[f.get("path") or ""] = out.get(f.get("path") or "", 0) + 1
+    return out
+
+
 def scan(client, state, since, cap):
     files, blocked = client.list_allowed(since=since)
+    whole = files if not since else client.list_allowed()[0]  # the map always covers the whole Drive
     files = [f for f in files if not _agent_owned(f)]  # its own state, logs, sheets: never organised
     placed = state.get("placed", {})
     candidates, skipped = [], 0
     for f in files:
-        if placed.get(f["id"]) == f.get("modifiedTime"):
+        if f.get("modifiedTime") in (placed.get(f["id"]), state.get("seen", {}).get(f["id"])) \
+                and f.get("modifiedTime") is not None:
             skipped += 1
             continue
         candidates.append({k: f.get(k) for k in FIELDS})
-    return {"candidates": candidates[:cap], "blocked_count": blocked,
+    return {"candidates": candidates[:cap], "blocked_count": blocked, "folders": folder_map(whole),
             "skipped_unchanged": skipped, "truncated": len(candidates) > cap}
 
 
@@ -52,6 +63,7 @@ def main(argv):
             print(f"{c['mimeType']:<45} {c['path']}/{c['name']}")
         print(f"candidates={len(out['candidates'])} blocked_count={out['blocked_count']}")
         return 0
+    write_json(os.path.join(os.path.dirname(a.out), "folders.json"), out.pop("folders"))
     write_json(a.out, out)
     print(f"candidates={len(out['candidates'])} blocked_count={out['blocked_count']} "
           f"skipped_unchanged={out['skipped_unchanged']} -> {a.out}")

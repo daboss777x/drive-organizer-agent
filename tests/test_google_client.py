@@ -123,3 +123,56 @@ def test_agent_sheet_is_reused_instead_of_created_again(client, drive):
     assert first == second
     sheets = [f for f in drive.files.values() if f["name"] == "Drive Agent Inbox"]
     assert len(sheets) == 1
+
+
+def test_folders_found_once_are_remembered_for_the_rest_of_the_run(drive):
+    client = GoogleClient(drive, Guard({F}))
+    first = client.ensure_folder("Clients/Acme/Notes")
+    before = len(drive.calls)
+    assert client.ensure_folder("Clients/Acme/Notes") == first
+    assert client.ensure_folder("Clients/Acme") is not None
+    assert drive.calls[before:] == []                       # no more lookups at all
+
+
+def test_remembered_folders_never_skip_the_guard_for_the_forbidden_folder(drive):
+    client = GoogleClient(drive, Guard({F}))
+    with pytest.raises(Blocked):
+        client.ensure_folder("Vault")
+    with pytest.raises(Blocked):
+        client.ensure_folder("Vault")
+
+
+# ---- fewer round trips: the bridge sends the folder chain with each file ----
+def _counted(drive):
+    import collections
+    from bridge import BridgeApi
+    from bridge_sim import BridgeSim
+    calls, sim = collections.Counter(), BridgeSim(drive)
+
+    def send(p):
+        calls[p["action"]] += 1
+        return sim(p)
+    return GoogleClient(BridgeApi(send, secret="s"), Guard({F})), calls
+
+
+def test_reading_a_file_deep_in_folders_takes_two_calls(drive):
+    drive.folder("x", "Ivy", parent="work"); drive.folder("y", "Acme", parent="x")
+    drive.add("deepok", "brief.txt", parent="y"); drive.text["deepok"] = "hi"
+    client, calls = _counted(drive)
+    assert client.export_text("deepok") == "hi"
+    assert sum(calls.values()) <= 2, dict(calls)
+
+
+def test_one_move_takes_at_most_four_calls(drive):
+    from execute import run_items
+    client, calls = _counted(drive)
+    run_items(client, [{"id": "ok", "action": "move", "target_folder": "Content"}],
+              {"dry_run": False, "max_actions_per_run": 9})
+    assert sum(calls.values()) <= 4, dict(calls)
+
+
+def test_the_python_guard_still_blocks_using_the_chain(drive):
+    drive.folder("sub", "sub", parent=F); drive.add("hid2", "x.txt", parent="sub")
+    client, _ = _counted(drive)
+    with pytest.raises(Blocked):
+        client.export_text("hid2")

@@ -19,11 +19,34 @@ BROKEN_NAME = [
     re.compile(r"\s\(\d+\)(\.\w+)?$"),
     re.compile(r"^[\d\s_\-.]+(\.\w+)?$"),  # numeric junk like 20240311_0932.pdf
 ]
+# Names that say nothing about the file: camera, phone, screenshot and AI-generator defaults.
+UNCLEAR_NAME = [
+    re.compile(r"^(IMG|VID|PXL|DSC|DSCN|DCIM|MVIMG|PANO|MOV|GOPR)[-_ ]?\d", re.I),
+    re.compile(r"^[A-Z0-9]{4}\d{4}(\.\w+)?$"),  # camera serials like 5K2A5533.JPG
+    re.compile(r"^WhatsApp (Image|Video|Audio)", re.I),
+    re.compile(r"^Screen ?(shot|recording)", re.I),
+    re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I),  # UUIDs
+]
 FORBIDDEN_TARGETS = {"Archive", "_DriveAgent"}
 
 
 def is_broken_name(name):
     return any(r.search(name or "") for r in BROKEN_NAME)
+
+
+def is_renameable(name):
+    """Broken (Untitled, Copy of, (1), numeric junk) or unclear (camera/phone/AI defaults).
+    Meaningful names are left alone (the owner, 2026-11-17)."""
+    return is_broken_name(name) or any(r.search(name or "") for r in UNCLEAR_NAME)
+
+
+def _new_name_problem(old, new):
+    new = (new or "").strip()
+    if not is_renameable(old):
+        return "only broken or unclear names may be renamed"
+    if not new or "/" in new or is_renameable(new):
+        return "new_name invalid"
+    return None
 
 
 def _is_business(cand, summary):
@@ -58,12 +81,10 @@ def _check(it, cand, summary, config, dup_pairs):
             return "target_folder not allowed (forbidden, unsafe or sensitive-looking name)"
         if it["target_folder"] == cand.get("path"):
             return "already there"
+        if it.get("new_name"):  # move + rename in one step: both must be allowed
+            return _new_name_problem(cand["name"], it["new_name"])
     elif a == "rename":
-        new = (it.get("new_name") or "").strip()
-        if not is_broken_name(cand["name"]):
-            return "only broken names may be renamed"
-        if not new or "/" in new or is_broken_name(new):
-            return "new_name invalid"
+        return _new_name_problem(cand["name"], it.get("new_name"))
     elif a == "archive":
         if it.get("source") != "owner" and _is_business(cand, summary):
             return "business doc: default keep, never archived"
@@ -83,6 +104,7 @@ def validate(plan, candidates, summaries, config, dup_groups=(), unread=frozense
     known = {c["id"]: c for c in candidates}
     dup_pairs = {(g[0], other) for g in dup_groups for other in g[1:]}
     out = {"actions": [], "questions": [], "rejected": [], "deferred": []}
+    kept = []
     max_q = int(config.get("max_questions_per_run", 5))
 
     def reject(it, why):
@@ -97,7 +119,11 @@ def validate(plan, candidates, summaries, config, dup_groups=(), unread=frozense
             reject(it, f"action not allowed: {action}")
             continue
         if action == "keep":
+            kept.append(it["id"])
             continue
+        if action == "move" and it.get("new_name") and it.get("target_folder") == known[it["id"]].get("path"):
+            it = {**it, "action": "rename"}  # already in the right folder: only the name changes
+            action = "rename"
         path = known[it["id"]].get("path") or ""
         if path == "_DriveAgent" or path.startswith("_DriveAgent/"):
             reject(it, "the agent's own folder is never organised")
@@ -121,6 +147,10 @@ def validate(plan, candidates, summaries, config, dup_groups=(), unread=frozense
             reject(it, why)
         else:
             out["actions"].append(it)
+    planned = {it.get("id") for it in plan}
+    # every file needs a decision; decided ones are skipped by later scans unless they change
+    out["missing"] = [c["id"] for c in candidates if c["id"] not in planned and c["id"] not in untouchable]
+    out["seen"] = sorted(set(kept) | {a["id"] for a in out["actions"]} | (set(known) & set(untouchable)))
     return out
 
 
@@ -152,7 +182,7 @@ def main(argv):
     out = validate(plan, cands, summaries, load_config(), groups, unread, untouchable)
     write_json(os.path.join(rd, dest), out)
     print(f"actions={len(out['actions'])} questions={len(out['questions'])} "
-          f"rejected={len(out['rejected'])} deferred={len(out['deferred'])}")
+          f"rejected={len(out['rejected'])} deferred={len(out['deferred'])} missing={len(out['missing'])}")
     return 0
 
 

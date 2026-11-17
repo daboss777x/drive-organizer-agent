@@ -38,7 +38,8 @@ def main(argv):  # pragma: no cover - exercised in the live dry run
     client = from_env()
     rd = run_dir()
     ok = audit.check([rd, os.path.join(ROOT, "rules.md"), os.path.join(ROOT, "business_context.md")],
-                     client.guard, client.api.get_meta, known_ok=audit.known_ok_ids(client))
+                     client.guard, client.api.get_meta, known_ok=audit.known_ok_ids(client),
+                     not_ids=audit.run_checksums(rd))
     body = open(argv[0], encoding="utf-8").read() if ok else ""
     first = body.splitlines()[0].lstrip("# ").strip() if body else "Drive agent report"
     msg = build_message(cfg["report_email"], first, body, ok)

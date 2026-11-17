@@ -50,3 +50,26 @@ def test_the_agents_own_folder_is_never_a_candidate():
                      {"id": "k", "name": "brief.docx", "path": "", "modifiedTime": "1"}], 0)
     out = scan(C(), {}, None, 150)
     assert [c["id"] for c in out["candidates"]] == ["k"]
+
+
+def test_files_already_decided_are_skipped_until_they_change():
+    import state as st
+    from drive_scan import scan
+
+    class C:
+        def list_allowed(self, since=None):
+            return ([{"id": "k", "name": "kept.pdf", "path": "", "modifiedTime": "1"},
+                     {"id": "x", "name": "edited.pdf", "path": "", "modifiedTime": "2"},
+                     {"id": "n", "name": "new.pdf", "path": "", "modifiedTime": "1"}], 0)
+    state = {}
+    st.mark_seen(state, ["k", "x"], {"k": {"modifiedTime": "1"}, "x": {"modifiedTime": "1"}})
+    out = scan(C(), state, None, 150)
+    assert [c["id"] for c in out["candidates"]] == ["x", "n"]   # x changed since, so it's back
+
+
+def test_scan_gives_a_folder_map_of_the_whole_drive_without_ids_or_protected_folders(client):
+    state = {"placed": {"b": "2026-02-01T00:00:00Z"}}   # skipped as a candidate, still counted
+    out = scan(client, state=state, since="2026-03-01T00:00:00Z", cap=100)
+    assert out["folders"] == {"Work/Projects": 1, "": 1}
+    text = json.dumps(out["folders"])
+    assert "Vault" not in text and "Deep" not in text and F not in text

@@ -71,7 +71,7 @@ def _today():
 
 def _record(state, e, to, note):
     state.setdefault("feedback", []).append(
-        {"name": e["name"], "agent_to": e.get("to", ""), "owner_to": to, "note": note})
+        {"id": e["id"], "name": e["name"], "agent_to": e.get("to", ""), "owner_to": to, "note": note})
     state["feedback"] = state["feedback"][-500:]
     state.setdefault("history", []).append(
         {"run": _today(), "id": e["id"], "name": e["name"], "from": e.get("to", ""), "to": to,
@@ -124,7 +124,7 @@ def undo_run(client, state, log):
             break
         out["undone"].append(name)
         state.setdefault("feedback", []).append(
-            {"name": name, "agent_to": "(that run)", "owner_to": "(back where it was)",
+            {"id": e["id"], "name": name, "agent_to": "(that run)", "owner_to": "(back where it was)",
              "note": "whole run undone by the owner"})
         state.setdefault("history", []).append(
             {"run": _today(), "id": e["id"], "name": name, "from": "", "to": "", "action": "undo",

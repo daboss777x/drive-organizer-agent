@@ -14,8 +14,16 @@ class BridgeSim:
         a, d = p["args"], self.d
         try:
             act = p["action"]
-            if act == "get_meta":
+            if act == "get_meta":  # same shape as bridge/Code.gs: the file + its folder chain
                 r = d.get_meta(a["id"])
+                chain, cur = [], r
+                for _ in range(50):
+                    ps = cur.get("parents") or []
+                    if not ps:
+                        break
+                    cur = d.get_meta(ps[0])
+                    chain.append({k: cur.get(k) for k in ("id", "name", "mimeType")} | {"parents": cur.get("parents") or []})
+                r = {**r, "ancestors": chain}
             elif act == "list_files":
                 r = d.list_files(set(a["exclude_parents"]), a["modified_after"])
             elif act == "export_text":

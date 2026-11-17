@@ -58,3 +58,11 @@ def test_report_groups_what_it_did_by_folder_with_reasons_and_points_to_drive_re
     assert "old deck.pptx" in md and "Archive this 2019 deck?" in md
     assert "/drive-review" in md
     assert "spreadsheets" not in md
+
+
+def test_report_shows_the_new_name_of_a_file_that_was_moved_and_renamed():
+    cands = {"p": {"name": "DSC_2038.jpg", "path": "Acme Studio"}}
+    results = [{"id": "p", "action": "move", "target_folder": "Clients/Northbeam Events/Photos",
+                "new_name": "Northbeam Events - event photo 01.jpg", "status": "done", "reason": "client shoot"}]
+    md = build(dry_run=False, results=results, cands=cands, **BASE)
+    assert "DSC_2038.jpg** → \"Northbeam Events - event photo 01.jpg\"" in md

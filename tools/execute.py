@@ -27,11 +27,14 @@ def _apply(client, it):
         dest = client.ensure_folder(target)
         client.move(it["id"], dest)
         entry["new_parent"] = dest
+        if it["action"] == "move" and it.get("new_name"):  # move + rename: one action, one undo entry
+            client.rename(it["id"], it["new_name"])
+            entry["new_name"] = it["new_name"]
     entry["modifiedTime"] = meta.get("modifiedTime")
     return entry
 
 
-def run_items(client, items, config):
+def run_items(client, items, config, on_done=None):
     """Returns (results, undo_log). A refusal halts the run; later items are 'not_run'."""
     results, log, done = [], [], 0
     for i, it in enumerate(items):
@@ -46,7 +49,10 @@ def run_items(client, items, config):
             results.append({**base, "status": "skipped_cap", "ok": False})
             continue
         try:
-            log.append(_apply(client, it))
+            entry = _apply(client, it)
+            log.append(entry)
+            if on_done:
+                on_done(entry)  # saved right away: a run cut off midway can still be undone
             results.append({**base, "status": "done", "ok": True})
             done += 1
         except Blocked:
@@ -58,6 +64,12 @@ def run_items(client, items, config):
     return results, log
 
 
+def decided_ids(seen, results):
+    """`seen` from the validator, minus files whose action didn't happen (capped, error, not run)."""
+    pending = {r.get("id") for r in results if r.get("status") != "done"}
+    return [i for i in seen if i not in pending]
+
+
 run = run_items  # public seam name used by tests: execute.run(client, items, config)
 
 
@@ -66,7 +78,8 @@ def save_undo_log(client, state, log, stamp, run_date):
     run); state remembers which file belongs to which run, so /drive-review can undo a whole run."""
     name = f"undo_{stamp}.json"
     client.write_agent_file(name, json.dumps(log, indent=1), sub="logs")
-    state.setdefault("undo_logs", []).append({"run": run_date, "file": name, "count": len(log)})
+    logs = [l for l in state.setdefault("undo_logs", []) if l.get("file") != name]
+    state["undo_logs"] = logs + [{"run": run_date, "file": name, "count": len(log)}]
     state["undo_logs"] = state["undo_logs"][-200:]
 
 
@@ -99,20 +112,33 @@ def main(argv):
     if a.answers:
         items += read_json(a.answers, {"actions": []})["actions"]
     items += read_json(a.plan)["actions"]
-    results, log = run_items(client, items, cfg)
-    write_json(os.path.join(rd, "executed.json"), results)
     now = datetime.now(timezone.utc)
     stamp = now.strftime("%Y%m%dT%H%M%SZ")
     state_path = os.path.join(rd, "state.json")
     s = read_json(state_path, {}) or {}
+    live = not cfg.get("dry_run", True)
+    so_far = []
+
+    def on_done(entry):  # keep the undo log safe while the run is still going
+        so_far.append(entry)
+        write_json(os.path.join(rd, "undo_log.json"), so_far)
+        if len(so_far) % 5 == 0:
+            client.write_agent_file(f"undo_{stamp}.json", json.dumps(so_far, indent=1), sub="logs")
+
+    if live and items:
+        save_undo_log(client, s, [], stamp, now.date().isoformat())  # register before changing anything
+        st.push(client, s)
+    results, log = run_items(client, items, cfg, on_done=on_done if live else None)
+    write_json(os.path.join(rd, "executed.json"), results)
     if log:
-        write_json(os.path.join(rd, "undo_log.json"), log)
         save_undo_log(client, s, log, stamp, now.date().isoformat())
         for e in log:
-            st.mark_placed(s, e["id"], client.get_meta(e["id"]).get("modifiedTime"))
+            st.mark_placed(s, e["id"], e.get("modifiedTime"))
     cands = {c["id"]: c for c in read_json(os.path.join(rd, "candidates.json"), {"candidates": []})["candidates"]}
     cands.update({c["id"]: c for c in read_json(os.path.join(rd, "answers.json"), {}).get("candidates", [])})
     log_decisions(client, s, results, items, cands, now.strftime("%Y-%m-%d"), stamp)
+    if not cfg.get("dry_run", True) and not any(r.get("status") == "refused" for r in results):
+        st.mark_seen(s, decided_ids(read_json(a.plan, {}).get("seen", []), results), cands)  # next run moves on
     write_json(state_path, s)
     counts = {}
     for r in results:

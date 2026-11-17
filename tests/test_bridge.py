@@ -122,3 +122,31 @@ def test_cli_still_prints_type_only_for_other_errors(capsys, monkeypatch):
     with pytest.raises(SystemExit):
         common.run(main)
     assert capsys.readouterr().err.strip() == "error: ValueError"
+
+
+def test_temporary_http_errors_are_retried_then_succeed():
+    import urllib.error
+    from bridge import with_retries
+    calls, slept = [], []
+
+    def flaky(payload):
+        calls.append(payload)
+        if len(calls) < 3:
+            raise urllib.error.HTTPError("u", 503, "Service Unavailable", {}, None)
+        return {"ok": True, "result": 1}
+    send = with_retries(flaky, tries=3, sleep=slept.append)
+    assert send({"a": 1}) == {"ok": True, "result": 1}
+    assert len(calls) == 3 and len(slept) == 2
+
+
+def test_permanent_http_errors_are_not_retried():
+    import urllib.error
+    from bridge import with_retries
+    calls = []
+
+    def bad(payload):
+        calls.append(1)
+        raise urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+    with pytest.raises(urllib.error.HTTPError):
+        with_retries(bad, tries=3, sleep=lambda s: None)({})
+    assert len(calls) == 1

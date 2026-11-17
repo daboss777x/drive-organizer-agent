@@ -129,7 +129,18 @@ function findChild_(env, g, a, folder) {
 }
 
 var ACTIONS = {
-  get_meta: function (env, g, a) { return g.check(a.id); },
+  // Returns the file plus its folder chain up to My Drive (fetched inside Google, fast), so the
+  // Python guard can run its own check without one round trip per folder.
+  get_meta: function (env, g, a) {
+    var m = g.check(a.id), chain = [], cur = m;
+    for (var i = 0; i < 50; i++) {
+      var p = (cur.parents || [])[0];
+      if (!p) break;
+      cur = g.get(p);
+      chain.push({ id: cur.id, name: cur.name, mimeType: cur.mimeType, parents: cur.parents || [] });
+    }
+    return Object.assign({}, m, { ancestors: chain });
+  },
 
   list_files: function (env, g, a, meta) {
     if (!g.configured) throw new Refused_();

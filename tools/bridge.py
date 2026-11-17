@@ -79,7 +79,31 @@ class BridgeApi:
         return self._call("send_mail", to=to, subject=subject, body=body)
 
 
-def http_transport(url, timeout=300):  # pragma: no cover - exercised by the live smoke test
+def _temporary(e):
+    import socket
+    import urllib.error
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code == 429 or e.code >= 500
+    return isinstance(e, (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError))
+
+
+def with_retries(send, tries=3, sleep=None, waits=(5, 15)):
+    """Retry temporary Google errors (timeouts, 429, 5xx). Permanent errors fail at once."""
+    import time
+    sleep = sleep or time.sleep
+
+    def wrapped(payload):
+        for attempt in range(tries):
+            try:
+                return send(payload)
+            except Exception as e:
+                if attempt == tries - 1 or not _temporary(e):
+                    raise
+                sleep(waits[min(attempt, len(waits) - 1)])
+    return wrapped
+
+
+def http_transport(url, timeout=90):  # a hung call is retried, not waited on for minutes  # pragma: no cover - exercised by the live smoke test
     import urllib.request
 
     def send(payload):
@@ -90,7 +114,7 @@ def http_transport(url, timeout=300):  # pragma: no cover - exercised by the liv
                 return json.loads(r.read().decode("utf-8"))
             except ValueError:
                 return None
-    return send
+    return with_retries(send)
 
 
 class BridgeSheets:

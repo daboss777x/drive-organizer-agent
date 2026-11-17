@@ -62,7 +62,7 @@ def build(dry_run, scan, results, cands, questions, rejected, context_proposals,
         for r in groups[dest]:
             c = cands.get(r.get("id"), {})
             name = c.get("name", "a file")
-            extra = f" → \"{r.get('new_name')}\"" if r.get("action") == "rename" else ""
+            extra = f" → \"{r['new_name']}\"" if r.get("new_name") else ""
             why = f": {r['reason']}" if r.get("reason") else ""
             out.append(f"- **{name}**{extra} (from /{c.get('path', '')}){why}")
     if flagged:

@@ -25,9 +25,23 @@ class GoogleClient:
     def __init__(self, api, guard):
         self.api = api
         self.guard = guard
+        self._metas = {}  # this process only: metadata already fetched, incl. folder chains
+
+    def _lookup(self, file_id):
+        """Metadata for the guard. The bridge sends each file's folder chain with it, so walking up
+        the folders costs no extra round trips. The guard's own check is unchanged."""
+        if file_id not in self._metas:
+            m = self.api.get_meta(file_id)
+            for a in (m.get("ancestors") or []):
+                self._metas.setdefault(a["id"], a)
+            self._metas[file_id] = {k: v for k, v in m.items() if k != "ancestors"}
+        return self._metas[file_id]
+
+    def _forget(self, file_id):
+        self._metas.pop(file_id, None)
 
     def _check(self, file_id):
-        return self.guard.assert_allowed(file_id, self.api.get_meta)
+        return self.guard.assert_allowed(file_id, self._lookup)
 
     def get_meta(self, file_id):
         return self._check(file_id)
@@ -45,6 +59,7 @@ class GoogleClient:
         self._check(new_parent_id)
         old = meta["parents"][0]
         self.api.update(file_id, add_parent=new_parent_id, remove_parent=old)
+        self._forget(file_id)
         return old
 
     def list_allowed(self, since=None, cap=None):
@@ -81,14 +96,25 @@ class GoogleClient:
         return "/".join(reversed(names))
 
     def ensure_folder(self, path, root="root"):
-        """Find or create a folder path like 'Clients/Northbeam'. Returns its ID."""
-        parent = root
-        for name in [p for p in path.split("/") if p]:
+        """Find or create a folder path like 'Clients/Northbeam'. Returns its ID.
+        Paths that passed the guard are remembered for this run (moves still re-check the guard)."""
+        cache = self.__dict__.setdefault("_folder_ids", {})
+        parts = [p for p in path.split("/") if p]
+        key = (root, "/".join(parts))
+        if key in cache:
+            return cache[key]
+        parent, found_ids = root, []
+        for name in parts:
             if parent != root:
                 self._check(parent)
-            found = self.api.find_child_folder(name, parent)
-            parent = found["id"] if found else self.api.create_folder(name, parent)["id"]
+            found = self.api.find_child_folder(name, parent) or self.api.create_folder(name, parent)
+            self._metas.setdefault(found["id"], found)
+            parent = found["id"]
+            found_ids.append(parent)
         self._check(parent)
+        for i, fid in enumerate(found_ids):  # every prefix is now known to be allowed
+            cache[(root, "/".join(parts[:i + 1]))] = fid
+        cache[key] = parent
         return parent
 
     def read_agent_file(self, name, sub=""):
@@ -123,9 +149,10 @@ class GoogleClient:
 
     def rename(self, file_id, new_name):
         meta = self._check(file_id)
-        if self.guard.is_blocked({**meta, "name": new_name}, self.api.get_meta):
+        if self.guard.is_blocked({**meta, "name": new_name}, self._lookup):
             raise Blocked()
         self.api.update(file_id, name=new_name)
+        self._forget(file_id)
         return meta["name"]
 
 

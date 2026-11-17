@@ -14,7 +14,7 @@ code, twice: `tools/guard.py` (Python) and the Apps Script bridge's own guard (`
 Routine wakes (cron) -> clones this repo -> `state.py begin` pulls memory from `_DriveAgent/state.json`
 -> learn from corrections -> scan (bridge `list_files`, forbidden files dropped, count only)
 -> name screen (word list + Haiku `screener`, names only) -> Haiku `summarizer` subagents read
-safe files -> Sonnet writes `plan.json` -> `validate_plan.py` enforces the hard rules ->
+safe files -> Sonnet designs the target folder map (`structure.md`, kept in state) and writes `plan.json` -> `validate_plan.py` enforces the hard rules ->
 `execute.py` acts through the bridge (undo log + decision log in `_DriveAgent/logs/`)
 -> `audit.py` re-checks every ID in the output -> `send_email.py` -> `state.py finish`.
 
@@ -32,6 +32,8 @@ safe files -> Sonnet writes `plan.json` -> `validate_plan.py` enforces the hard 
 | `.claude/hooks/`, `.claude/settings.json` | Bash gate (only `python tools/*.py` and `pytest`), edit lock, denied connectors |
 | `workflows/*.md` | The recipe the cloud agent follows each run |
 | `config.yaml` | Tunables (`dry_run`, caps, report email) |
+
+To re-sort the whole Drive with new rules: `python tools/state.py reorganise` (forgets decisions, keeps what was learned).
 
 ## Weekly run ("Run the weekly Drive organizer per CLAUDE.md")
 Follow these steps in order. The only commands that work are `python tools/<name>.py ...` and `pytest`.
@@ -73,3 +75,7 @@ skip straight to step 7.
   the secret is set. Without it (a normal dev shell) you can run git/pip, but nothing can reach Google.
 - `bridge/Code.gs` changes need tests in `bridge/code.test.js` (Node built-in runner) and must
   keep `tests/bridge_sim.py` in step (same action and argument names).
+
+## Credits
+- Built with [Claude Code](https://claude.com/claude-code) (cloud routines, subagents, hooks).
+- Google Apps Script and the Drive API v3 advanced service. Architecture drawing uses rough.js.

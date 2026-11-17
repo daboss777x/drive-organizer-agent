@@ -189,3 +189,15 @@ test('list_files puts each excluded folder in the query once (duplicates make Dr
   assert.strictEqual(q.split("not 'VAULT' in parents").length - 1, 1, q);
   assert.strictEqual(q.split("not 'WORK' in parents").length - 1, 1, q);
 });
+
+test('get_meta returns the folder chain up to My Drive, so the Python guard needs no extra calls', () => {
+  const r = handle(req('get_meta', { id: 'OK' }), makeEnv());
+  assert.strictEqual(r.result.id, 'OK');
+  assert.deepStrictEqual(r.result.ancestors.map(a => a.id), ['WORK', 'ROOT']);
+  assert.ok(r.result.ancestors.every(a => 'parents' in a || a.id === 'ROOT'));
+});
+
+test('a refused file returns no chain at all', () => {
+  const r = handle(req('get_meta', { id: 'DEEP' }), makeEnv());
+  assert.deepStrictEqual(r, { ok: false, error: 'refused' });
+});

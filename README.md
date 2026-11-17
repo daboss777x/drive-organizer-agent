@@ -32,6 +32,12 @@ plain Python tools, with 327 tests.
 - Name screen before reading: real secrets (IDs, passwords, medical) are never opened or moved;
   other sensitive-looking names are filed by name only, unread.
 - Parallel Haiku readers summarise files; Sonnet decides moves, renames, new folders and archives.
+- Structure first: each run designs (or extends) a target folder map for the whole Drive, merges
+  near-duplicate folders, splits dumping grounds, and decides every file against that map.
+- Renames unclear names (camera, phone, WhatsApp, screenshot and UUID-style defaults) as well as
+  broken ones (`Untitled`, `Copy of`), to `<Client or topic> - <what> - <date>.<ext>`. Meaningful names are left alone.
+- Move and rename in one undoable step; `python tools/state.py reorganise` re-sorts the whole Drive
+  with new rules while keeping everything it has learned.
 - Rule checker in code: no delete, no sharing changes, no moves into unsafe or agent folders, max 5 questions.
 - Exact-duplicate detection (checksums / identical text) with automatic archiving of extra copies.
 - Decision log and undo log in your Drive (`_DriveAgent/logs/`); undo one file or a whole run.
@@ -90,7 +96,9 @@ Accounts, tools and costs: **[REQUIREMENTS.md](REQUIREMENTS.md)**.
 | The folder that must never be touched | `tools/guard.py` (+ `FORBIDDEN_FOLDER_IDS` in Apps Script) |
 | Report address | `config.yaml` `report_email` (+ `REPORT_EMAIL` in Apps Script) |
 | Files, actions and questions per run | `config.yaml` (`max_files_per_run`, `max_actions_per_run`, `max_questions_per_run`) |
-| Suggested top-level folders | `config.yaml` `categories`, `workflows/03_classify.md` |
+| Suggested top-level folders, renaming style | `config.yaml` `categories`, `workflows/03_classify.md` |
+| Which names count as unclear (renameable) | `tools/validate_plan.py` `UNCLEAR_NAME` |
+| Re-sort the whole Drive with new rules | `python tools/state.py reorganise` |
 | Your clients and projects (optional) | `business_context.md` |
 | Standing rules ("zips go to the client folder") | `/drive-review` (saved to `rules.md`) |
 | What counts as a sensitive name | `tools/screen.py` (word list), `.claude/agents/screener.md` |
@@ -108,8 +116,10 @@ Accounts, tools and costs: **[REQUIREMENTS.md](REQUIREMENTS.md)**.
 - **Start with `dry_run: true`** and read a few reports before going live. Only you should flip it.
 - The agent writes its own state, logs and reports in a `_DriveAgent` folder in your Drive.
 - Files over about 45 MB can't pass through the bridge; they're filed by name and folder only.
-- The classifier can be cautious on some runs and plan fewer moves than expected; check the
-  "Here's what I did" email and correct it in `/drive-review`.
+- The agent acts on its own judgement and moves a lot on the first passes (every change is logged
+  and undoable). Read the "Here's what I did" email and correct it in `/drive-review`.
+- Each bridge call takes about 2 seconds, so `max_actions_per_run` (default 100) keeps a run under
+  the cloud's 30-minute command limit. Actions over the cap are picked up the next run.
 - No license is included: you can read the code, but there's no grant to reuse it.
 
 ## Credits

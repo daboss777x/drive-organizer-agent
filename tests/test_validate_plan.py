@@ -80,7 +80,7 @@ def test_rename_only_fixes_broken_names(id, new, ok):
 
 @pytest.mark.parametrize("target,ok", [
     ("Clients/Northbeam/Contracts", True), ("Content", True),
-    ("Claude Skills", True), ("Events/Tellit", True),          # new top-level folders allowed
+    ("Claude Skills", True), ("Events/Northbeam", True),          # new top-level folders allowed
     ("Archive", False), ("Archive/old", False), ("_DriveAgent", False), ("_DriveAgent/x", False),
     ("Clients/../_DriveAgent", False), ("Clients/./x", False), ("", False), ("/Content", False),
     ("Content/", False), ("Content//x", False),
@@ -179,3 +179,51 @@ def test_nothing_inside_the_agents_own_folder_may_be_moved_or_renamed():
             {"id": "l", "action": "rename", "new_name": "log", "confidence": 0.9, "reason": "r"}]
     out = validate(plan, cands, {}, {"categories": [], "ask_threshold": 0.7})
     assert out["actions"] == [] and len(out["rejected"]) == 2
+
+
+def test_every_file_needs_a_decision_and_decided_files_are_reported_as_seen():
+    from validate_plan import validate
+    cands = [{"id": i, "name": f"{i}.pdf", "path": ""} for i in ("a", "b", "c", "u")]
+    plan = [{"id": "a", "action": "move", "target_folder": "Content", "confidence": 0.9, "reason": "r"},
+            {"id": "b", "action": "keep", "reason": "already fine"}]
+    out = validate(plan, cands, {}, {"categories": [], "ask_threshold": 0.7}, untouchable={"u"})
+    assert out["missing"] == ["c"]                 # no decision: the run must go back and decide it
+    assert set(out["seen"]) == {"a", "b", "u"}     # decided (or untouchable): skip next scan unless changed
+
+
+# ---- better organisation (the owner, 2026-11-17): unclear names, move + rename in one step ----
+@pytest.mark.parametrize("name", [
+    "IMG-20240814-WA0009.jpg", "IMG_1234.JPG", "DSC_2038.jpg", "5K2A5533.JPG", "PXL_20240101_123456.jpg",
+    "Generate a shot 3f7395c7-32a1-4f65-951e-6cc8f21e8688.png", "Screenshot 2024-08-14 at 10.12.01.png",
+    "WhatsApp Image 2024-08-14 at 16.56.02.jpeg", "VID_20240814_165602.mp4", "Document (3).pdf",
+])
+def test_unclear_names_may_be_renamed(name):
+    out = validate([item("x", "rename", new_name="Northbeam Events - event photo - 2024-08-14.jpg")],
+                   [cand("x", name)], {}, CFG)
+    assert [a["id"] for a in out["actions"]] == ["x"], out["rejected"]
+
+
+@pytest.mark.parametrize("name", ["Northbeam proposal.pdf", "Ad71.png", "NorthbeamInsta2-Value.png"])
+def test_meaningful_names_are_still_left_alone(name):
+    out = validate([item("x", "rename", new_name="Something else.png")], [cand("x", name)], {}, CFG)
+    assert out["actions"] == [] and out["rejected"]
+
+
+def test_a_move_can_rename_an_unclear_name_in_the_same_step():
+    out = validate([item("x", "move", target_folder="Clients/Northbeam Events/Photos",
+                         new_name="Northbeam Events - event photo 01.jpg")],
+                   [cand("x", "DSC_2038.jpg", "Acme Studio")], {}, CFG)
+    assert out["actions"][0]["new_name"] == "Northbeam Events - event photo 01.jpg"
+
+
+@pytest.mark.parametrize("name,new", [("Northbeam proposal.pdf", "Proposal.pdf"),  # meaningful name
+                                      ("DSC_2038.jpg", "a/b.jpg"), ("DSC_2038.jpg", "IMG_1.jpg")])
+def test_a_move_with_a_bad_new_name_is_rejected_whole(name, new):
+    out = validate([item("x", "move", target_folder="Content", new_name=new)], [cand("x", name)], {}, CFG)
+    assert out["actions"] == [] and out["rejected"]
+
+
+def test_a_move_into_the_same_folder_with_a_rename_is_just_a_rename():
+    out = validate([item("x", "move", target_folder="Acme Studio", new_name="Acme Studio logo.png")],
+                   [cand("x", "IMG_1234.png", "Acme Studio")], {}, CFG)
+    assert [a["action"] for a in out["actions"]] == ["rename"]

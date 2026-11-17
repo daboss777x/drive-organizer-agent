@@ -131,3 +131,35 @@ def test_live_run_saves_its_undo_log_in_drive_and_remembers_it(client, drive):
     save_undo_log(client, state, log, stamp="20261120T154000Z", run_date="2026-11-20")
     assert state["undo_logs"] == [{"run": "2026-11-20", "file": "undo_20261120T154000Z.json", "count": 1}]
     assert any(f["name"] == "undo_20261120T154000Z.json" for f in drive.files.values())
+
+
+def test_each_done_change_is_reported_immediately_so_the_undo_log_survives_a_cutoff(client, drive):
+    from execute import run_items
+    seen = []
+    results, log = run_items(client, ITEMS, CFG, on_done=seen.append)
+    assert seen == log and len(seen) == sum(r["status"] == "done" for r in results)
+
+
+def test_dry_run_reports_nothing_as_done(client, drive):
+    from execute import run_items
+    seen = []
+    run_items(client, ITEMS, {**CFG, "dry_run": True}, on_done=seen.append)
+    assert seen == []
+
+
+def test_a_move_with_a_new_name_moves_and_renames_and_undoes_as_one(client, drive):
+    item = {"id": "c", "action": "move", "target_folder": "Content/Memes", "new_name": "Office meme.png"}
+    results, log = execute(client, [item], CFG)
+    assert results[0]["status"] == "done"
+    assert path_of(drive, "c") == "Content/Memes" and drive.files["c"]["name"] == "Office meme.png"
+    assert log[0]["old_name"] == "meme.png" and log[0]["new_name"] == "Office meme.png"
+    undo(client, log)
+    assert path_of(drive, "c") == "Downloads" and drive.files["c"]["name"] == "meme.png"
+
+
+def test_files_whose_action_did_not_happen_are_not_marked_decided():
+    """A capped or failed action must come back next run, not be skipped forever."""
+    from execute import decided_ids
+    results = [{"id": "a", "status": "done"}, {"id": "b", "status": "skipped_cap"},
+               {"id": "c", "status": "error: HTTPError"}]
+    assert decided_ids(["a", "b", "c", "k"], results) == ["a", "k"]  # k was a keep

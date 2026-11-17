@@ -24,15 +24,28 @@ def _files(paths):
 
 
 def known_ok_ids(client):
-    """IDs that passed both guards in one fresh full listing: one call instead of one per ID."""
+    """IDs (files AND folders) that pass both guards in one fresh listing: one call, not hundreds."""
     try:
-        files, _ = client.list_allowed()
+        raw = client.api.list_files(exclude_parents=client.guard.folder_ids)
+        index = {f["id"]: f for f in raw}
+
+        def lookup(i):
+            if i not in index:
+                index[i] = client.api.get_meta(i)
+            return index[i]
+        return {f["id"] for f in raw if not client.guard.is_blocked(f, lookup)}
     except Exception:
         return set()  # no shortcut: every ID gets checked one by one (slow but safe)
-    return {f["id"] for f in files}
 
 
-def check(paths, guard, get_meta, known_ok=()):
+def run_checksums(rd):
+    """md5 checksums in this run's candidates look like IDs but aren't: don't look them up."""
+    from common import read_json
+    cands = (read_json(os.path.join(rd, "candidates.json"), {}) or {}).get("candidates", [])
+    return {c["md5Checksum"] for c in cands if c.get("md5Checksum")}
+
+
+def check(paths, guard, get_meta, known_ok=(), not_ids=()):
     from google_client import NotFound
     try:
         tokens = set()
@@ -43,7 +56,7 @@ def check(paths, guard, get_meta, known_ok=()):
         for t in tokens:
             if t in literal:
                 return False
-            if t in known_ok:  # guard-checked moments ago in a fresh listing
+            if t in known_ok or t in not_ids:  # guard-checked moments ago / a checksum, not an ID
                 continue
             try:
                 meta = get_meta(t)
@@ -61,7 +74,8 @@ def main(argv):
     client = from_env()
     rd = run_dir()
     paths = [rd, os.path.join(ROOT, "rules.md"), os.path.join(ROOT, "business_context.md")]
-    ok = check(paths, client.guard, client.api.get_meta, known_ok=known_ok_ids(client))
+    ok = check(paths, client.guard, client.api.get_meta, known_ok=known_ok_ids(client),
+               not_ids=run_checksums(rd))
     write_json(os.path.join(rd, "audit.json"), {"ok": ok})
     print("ok" if ok else "SECURITY ABORT")
     return 0 if ok else 4

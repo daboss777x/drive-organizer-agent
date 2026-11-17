@@ -61,3 +61,21 @@ def test_ids_already_checked_this_run_are_not_fetched_again(tmp_path, drive):
 def test_forbidden_ids_still_fail_even_if_listed_as_known_ok(tmp_path, drive):
     write(tmp_path, "a.json", {"ids": [VAULT]})
     assert check([str(tmp_path)], Guard({VAULT}), drive.get_meta, known_ok={VAULT}) is False
+
+
+def test_checksums_are_not_looked_up_as_if_they_were_file_ids(tmp_path, drive):
+    md5 = "9e107d9d372bb6826bd81d3542a419d6"
+    write(tmp_path, "c.json", {"md5Checksum": md5})
+    drive.calls.clear()
+    assert check([str(tmp_path)], Guard({VAULT}), drive.get_meta, not_ids={md5}) is True
+    assert ("get", md5) not in drive.calls
+
+
+def test_known_ok_ids_include_allowed_folders_but_never_the_forbidden_one(drive):
+    from audit import known_ok_ids
+    from google_client import GoogleClient
+    drive.folder("WORKFOLDER0000000000000000000", "Work")
+    client = GoogleClient(drive, Guard({VAULT}))
+    ok = known_ok_ids(client)
+    assert "WORKFOLDER0000000000000000000" in ok and NORMAL in ok
+    assert VAULT not in ok and SECRET not in ok

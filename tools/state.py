@@ -10,6 +10,8 @@ Lives in Drive at _DriveAgent/state.json; a working copy sits in runs/<run>/stat
   python tools/state.py digest                    # candidates + summaries -> classify_input.json
   python tools/state.py learn                     # files the owner moved after the agent placed them -> corrections.json
   python tools/state.py finish                    # move scan_since (live + uncapped scans only), then push
+  python tools/state.py save-structure            # runs/current/structure.md -> state (the target map)
+  python tools/state.py reorganise                # forget decisions so the next runs re-sort the WHOLE Drive
 """
 import glob
 import json
@@ -47,6 +49,15 @@ def merge(state, candidates, batches):
     return added
 
 
+def mark_seen(state, ids, cands):
+    """Files with a decision (incl. keep) aren't scanned again until their modifiedTime changes,
+    so each live run works through the NEXT batch of the Drive instead of the same newest 150."""
+    seen = state.setdefault("seen", {})
+    for i in ids:
+        if i in cands:
+            seen[i] = cands[i].get("modifiedTime")
+
+
 def mark_placed(state, file_id, modified_time):
     state.setdefault("placed", {})[file_id] = modified_time
 
@@ -58,6 +69,24 @@ def finish_state(state, scan, dry_run, now):
     if not dry_run and not scan.get("truncated"):
         state["scan_since"] = now
     return state
+
+
+def reorganise(state):
+    """Re-sort the whole Drive with the current rules: forget which files were decided and where the
+    scan got to. What was learned (summaries, screen, the owner's corrections/feedback, the map) stays."""
+    for k in ("seen", "placed"):
+        state[k] = {}
+    state.pop("scan_since", None)
+    return state
+
+
+def save_structure(state, text):
+    if (text or "").strip():
+        state["structure"] = text.strip() + "\n"
+
+
+def structure_text(state):
+    return state.get("structure", "")
 
 
 DIGEST_KEYS = ("id", "name", "path", "mimeType", "modifiedTime", "viewedByMeTime")
@@ -80,6 +109,47 @@ def digest_rows(state, cands):
     return rows
 
 
+ID_DICTS = ("screen", "summaries", "seen", "placed", "placed_to", "screen_cleared", "screen_never")
+ID_LISTS = ("history", "corrections", "feedback", "open_questions")
+
+
+def prune_protected(state, allowed):
+    """Forget every file the guard no longer allows (moved into the forbidden folder, or gone):
+    no ID and no name of it may stay in memory. Returns how many files were dropped (count only)."""
+    ids = set()
+    for k in ID_DICTS:
+        ids |= set(state.get(k, {}))
+    for k in ID_LISTS:
+        ids |= {e.get("id") for e in state.get(k, []) if isinstance(e, dict) and e.get("id")}
+    gone = {i for i in ids if not allowed(i)}
+    for k in ID_DICTS:
+        if k in state:
+            state[k] = {i: v for i, v in state[k].items() if i not in gone}
+    for k in ID_LISTS:
+        if k in state:
+            state[k] = [e for e in state[k] if not (isinstance(e, dict) and e.get("id") in gone)]
+    return len(gone)
+
+
+def allowed_now(client):
+    """allowed(id) for prune_protected: one fresh listing, then single lookups for the rest."""
+    import audit
+    from google_client import NotFound
+    ok = audit.known_ok_ids(client)
+
+    def allowed(i):
+        if i in ok:
+            return True
+        try:
+            meta = client.api.get_meta(i)
+            return not client.guard.is_blocked(meta, client.api.get_meta)
+        except NotFound:
+            return False
+        except Exception:
+            return False  # can't prove it's allowed: forget it (it's only a cache)
+    return allowed
+
+
 def pull(client):
     raw = client.read_agent_file(STATE_NAME)
     return json.loads(raw) if raw else {}
@@ -97,11 +167,16 @@ def main(argv):
         import shutil
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         shutil.move(rd, rd + f"_prev_{stamp}")
-    if cmd in ("begin", "pull", "push", "finish", "learn"):
+    if cmd in ("begin", "pull", "push", "finish", "learn", "reorganise"):
         from google_client import from_env
         client = from_env()
     if cmd in ("begin", "pull"):
-        write_json(path, pull(client))
+        s = pull(client)
+        if cmd == "begin":
+            n = prune_protected(s, allowed_now(client))
+            if n:
+                print(f"forgot {n} file(s) that are now protected or gone")
+        write_json(path, s)
     elif cmd == "push":
         push(client, read_json(path, {}))
     elif cmd == "finish":
@@ -157,7 +232,19 @@ def main(argv):
         s = read_json(path, {})
         rows = digest_rows(s, read_json(os.path.join(rd, "candidates.json"), {})["candidates"])
         write_json(os.path.join(rd, "classify_input.json"), rows)
-        print(f"classify_input={len(rows)}")
+        with open(os.path.join(rd, "structure.md"), "w") as fh:
+            fh.write(structure_text(s))
+        print(f"classify_input={len(rows)} structure={'saved' if structure_text(s) else 'none yet'}")
+    elif cmd == "save-structure":
+        s = read_json(path, {})
+        sp = os.path.join(rd, "structure.md")
+        save_structure(s, open(sp).read() if os.path.exists(sp) else "")
+        write_json(path, s)
+        print(f"structure_lines={len(structure_text(s).splitlines())}")
+    elif cmd == "reorganise":
+        s = reorganise(pull(client))
+        push(client, s)
+        print("reorganise: the next runs re-sort the whole Drive")
     else:
         print(__doc__)
         return 2

@@ -1,3 +1,4 @@
+import json
 import pytest
 from fakes import FakeDrive
 from guard import Guard
@@ -72,3 +73,45 @@ def test_digest_gives_flagged_files_by_name_only_and_hides_untouchable_ones():
     assert rows["u"]["unread"] is True and rows["u"]["summary"] is None   # name only
     assert "p" not in rows   # identity word-list hit: untouchable
     assert "k" not in rows   # the owner said keep where it is
+
+
+def test_files_that_became_protected_are_forgotten_everywhere():
+    """A file moved into the forbidden folder after a scan must leave no ID or name in memory."""
+    P, K = "PROTECTED000000000000000000000", "KEEPME00000000000000000000000"
+    s = {"screen": {P: {"name": "secret.pdf"}, K: {"name": "brief.pdf"}},
+         "summaries": {P: {"summary": "x"}, K: {"summary": "y"}},
+         "seen": {P: "1", K: "1"}, "placed": {P: "1"}, "placed_to": {P: "Content"},
+         "screen_cleared": {P: "secret.pdf"}, "screen_never": {P: "secret.pdf"},
+         "history": [{"id": P, "name": "secret.pdf"}, {"id": K, "name": "brief.pdf"}],
+         "corrections": [{"id": P, "name": "secret.pdf"}],
+         "feedback": [{"id": P, "name": "secret.pdf", "answer": "x"}, {"rule": "zips -> client"}],
+         "open_questions": [{"id": P, "name": "secret.pdf", "question": "?"}]}
+    dropped = st.prune_protected(s, allowed=lambda i: i == K)
+    assert dropped == 1
+    assert "secret.pdf" not in json.dumps(s) and P not in json.dumps(s)
+    assert s["screen"] == {K: {"name": "brief.pdf"}} and s["history"] == [{"id": K, "name": "brief.pdf"}]
+    assert s["feedback"] == [{"rule": "zips -> client"}]   # rules without a file stay
+
+
+# ---- reorganise the whole Drive (the owner, 2026-11-17) ----
+def test_reorganise_forgets_what_was_decided_but_keeps_what_was_learned():
+    from state import reorganise
+    s = {"seen": {"a": "t"}, "placed": {"b": "t"}, "scan_since": "2026-11-17T11:36:00Z",
+         "placed_to": {"b": "Clients"}, "summaries": {"a": {}}, "screen": {"a": {}},
+         "screen_never": {"x": 1}, "corrections": [{"id": "b"}], "history": [{"id": "a"}],
+         "feedback": [{"id": "a"}], "structure": "old map"}
+    reorganise(s)
+    assert s["seen"] == {} and s["placed"] == {} and "scan_since" not in s
+    for k in ("placed_to", "summaries", "screen", "screen_never", "corrections", "history", "feedback",
+              "structure"):
+        assert s[k], k
+
+
+def test_the_target_structure_is_saved_in_state_and_given_back_to_every_run():
+    from state import save_structure, structure_text
+    s = {}
+    assert structure_text(s) == ""
+    save_structure(s, "Clients/<Client>/Photos\nAcme Studio/Ads\n")
+    assert "Acme Studio/Ads" in structure_text(s)
+    save_structure(s, "   ")            # an empty write never wipes the map
+    assert "Acme Studio/Ads" in structure_text(s)
